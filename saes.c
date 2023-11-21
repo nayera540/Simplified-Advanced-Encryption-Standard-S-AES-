@@ -7,6 +7,8 @@
 #define AES_ROUNDs 2
 
 void saes_encrypt(uint8_t *text, uint8_t *key, uint8_t *rounded_key ,uint8_t *result);
+void saes_decrypt(uint8_t *text, uint8_t *key, uint8_t *rounded_key ,uint8_t *result);
+
 /* Round Constants used in key expansion algorithm */
 const uint8_t RC[] = {0x80, 0x30};
 
@@ -59,13 +61,17 @@ const uint8_t MULTIPLY_TABLE[16][16] =
 
 
 int main(int argc, char *argv[]) {
+    if(argc != 4){
+        printf("Invalid number of arguments\n");
+        exit(1);
+    }
     const char *type = argv[1];
     const char *key = argv[2];
     const char *plain_text = argv[3];
     uint8_t key_bytes[AES_BLOCK_SIZE];
     uint8_t plain_text_bytes[AES_BLOCK_SIZE];
     uint8_t rounded_keys[AES_ROUNDs + AES_BLOCK_SIZE];
-    uint8_t cipher_text[AES_BLOCK_SIZE];
+    uint8_t result[AES_BLOCK_SIZE];
 
     for (int i = 0; i < AES_BLOCK_SIZE; i++) {
         key_bytes[i] = (uint8_t)(key[i] >= 'A' ? key[i] - 'A' + 10 : key[i] - '0');
@@ -74,14 +80,22 @@ int main(int argc, char *argv[]) {
 
     // Now key_bytes and plain_text_bytes contain the desired values
     if(strcmp(type,"ENC") == 0){
-        saes_encrypt(plain_text_bytes, key_bytes, rounded_keys, cipher_text);
+        saes_encrypt(plain_text_bytes, key_bytes, rounded_keys, result);
         for (int i = 0; i < AES_BLOCK_SIZE; i++) {
-            printf("%X", cipher_text[i]);
+            printf("%X", result[i]);
+        }
+        printf("\n");
+    }
+    else if(strcmp(type, "DEC") == 0){
+        saes_decrypt(plain_text_bytes, key_bytes, rounded_keys, result);
+        for (int i = 0; i < AES_BLOCK_SIZE; i++) {
+            printf("%X", result[i]);
         }
         printf("\n");
     }
     else{
         printf("Invalid type\n");
+        exit(1);
     }
     return 0;
 }
@@ -127,13 +141,13 @@ void AddRoundKey(uint8_t *plain_text, uint8_t w1, uint8_t w2) {
         plain_text[i] = (result >> ((3 - i) * 4)) & 0xF;
     }
 }
-void NibbleSub(uint8_t *plaintext)
+void NibbleSub(uint8_t *plaintext, const uint8_t *matrix)
 {
     int i;
 
     for (i = 0; i < 4; i++)
     {
-        plaintext[i] = S_BOX[plaintext[i]];
+        plaintext[i] = matrix[plaintext[i]];
     }
 }
 // Swap plaintext[1] and plaintext[3]
@@ -147,14 +161,14 @@ uint8_t Multiply(uint8_t a, uint8_t b)
 {
     return MULTIPLY_TABLE[a][b];
 }
-void MixColumns(uint8_t *state)
+void MixColumns(uint8_t *state, const uint8_t *matrix)
 {
     uint8_t result[4];
 
-    result[0] = Multiply(MIXCOLUMN_MATRIX[0], state[0]) ^ Multiply(MIXCOLUMN_MATRIX[1], state[1]);
-    result[1] = Multiply(MIXCOLUMN_MATRIX[2], state[0]) ^ Multiply(MIXCOLUMN_MATRIX[3], state[1]);
-    result[2] = Multiply(MIXCOLUMN_MATRIX[0], state[2]) ^ Multiply(MIXCOLUMN_MATRIX[1], state[3]);
-    result[3] = Multiply(MIXCOLUMN_MATRIX[2], state[2]) ^ Multiply(MIXCOLUMN_MATRIX[3], state[3]);
+    result[0] = Multiply(matrix[0], state[0]) ^ Multiply(matrix[1], state[1]);
+    result[1] = Multiply(matrix[2], state[0]) ^ Multiply(matrix[3], state[1]);
+    result[2] = Multiply(matrix[0], state[2]) ^ Multiply(matrix[1], state[3]);
+    result[3] = Multiply(matrix[2], state[2]) ^ Multiply(matrix[3], state[3]);
 
     for (int i = 0; i < 4; ++i)
     {
@@ -162,9 +176,10 @@ void MixColumns(uint8_t *state)
     }
 }
 void saes_encrypt(uint8_t *text, uint8_t *key, uint8_t *rounded_key ,uint8_t *result) {
-    // Round 0
     // Key Expansion
     KEY_EXPANSION(key, rounded_key);
+    // Round 0
+
     // AddRoundKey
     AddRoundKey(text, rounded_key[0], rounded_key[1]);
 
@@ -172,13 +187,13 @@ void saes_encrypt(uint8_t *text, uint8_t *key, uint8_t *rounded_key ,uint8_t *re
     // Round 1
 
     // Nibble Substitution
-    NibbleSub(text);
+    NibbleSub(text, S_BOX);
 
     // Shift Row
     ShiftRow(text);
 
     // Mix Column
-    MixColumns(text);
+    MixColumns(text, MIXCOLUMN_MATRIX);
 
     // AddRoundKey
     AddRoundKey(text, rounded_key[2], rounded_key[3]);
@@ -186,7 +201,7 @@ void saes_encrypt(uint8_t *text, uint8_t *key, uint8_t *rounded_key ,uint8_t *re
     // Round 2
 
     // Nibble Substitution
-    NibbleSub(text);
+    NibbleSub(text, S_BOX);
 
 
     // Shift Row
@@ -196,5 +211,32 @@ void saes_encrypt(uint8_t *text, uint8_t *key, uint8_t *rounded_key ,uint8_t *re
     AddRoundKey(text, rounded_key[4], rounded_key[5]);
     memcpy(result, text, AES_BLOCK_SIZE);
 
+
+}
+
+void saes_decrypt(uint8_t *text, uint8_t *key, uint8_t *rounded_key ,uint8_t *result) {
+    // Key Expansion
+    KEY_EXPANSION(key, rounded_key);
+    // Round 0
+    AddRoundKey(text, rounded_key[4], rounded_key[5]);
+
+    // Round 1
+    // Shift Row
+    ShiftRow(text);
+    // Inverse Nibble Substitution
+    NibbleSub(text, INVERSE_S_BOX);
+    // AddRoundKey
+    AddRoundKey(text, rounded_key[2], rounded_key[3]);
+    // Inverse Mix Column
+    MixColumns(text, INVERSE_MIXCOLUMN_MATRIX);
+
+    // Round 2
+    // Shift Row
+    ShiftRow(text);
+    // Inverse Nibble Substitution
+    NibbleSub(text, INVERSE_S_BOX);
+    // AddRoundKey
+    AddRoundKey(text, rounded_key[0], rounded_key[1]);
+    memcpy(result, text, AES_BLOCK_SIZE);
 
 }
