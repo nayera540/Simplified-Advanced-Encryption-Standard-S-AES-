@@ -2,7 +2,7 @@
 Welcome to the Simplified Advanced Encryption Standard (S-AES) repository! S-AES is a lightweight and easy-to-understand implementation of the Advanced Encryption Standard (AES).
 
 ## Input
-Type Key Plaintext
+Type | Key | Plaintext
 ## Output
 
 ### Encryption
